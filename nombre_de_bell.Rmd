@@ -1,0 +1,21 @@
+---
+title: "Nombre de BELL"
+author: "MALEK"
+output: html_document
+---
+
+```{r}
+bn <- function(n){
+  bk <- c(1)  
+  for (i in 1:n){
+    res <- 0
+    for (j in 1:i){
+      res <- res + choose(i-1, j-1) * bk[j] 
+    }
+    bk <- c(bk, res) 
+  }
+  return(bk[n+1])  
+}
+
+print(bn(4))
+```
