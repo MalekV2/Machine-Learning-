@@ -1,0 +1,433 @@
+---
+title: "Projet_2025"
+author: " Malek" 
+output: 
+  pdf_document:
+    latex_engine: xelatex  
+    toc: false
+---
+
+Les bibliothèques utiles pour le projet
+
+```{r}
+library(mlbench)
+library(ggplot2)
+library(GGally)
+library(MASS)
+library(e1071)
+library(caret)
+library(dplyr)
+```
+
+**Etude de simulation :**
+
+Nous simulons 2 gaussiennes en dimension 2 avec $\Sigma$ = $I$, $\mu_1^T = (0,0)$ et $\mu_2^T = (\epsilon, \epsilon)$.
+
+lorsque les deux classes sont de proportion identique =\> $\pi_1 = \pi_2$
+
+```{r}
+
+simul <- function(eps,n_obs) {
+  n1 = n_obs/2
+  
+  var = diag(2) # la variance de nos 2 gaussiennes. 
+  
+  X1 = mvrnorm(n1,c(0,0),var)
+  X2 = mvrnorm(n1,c(eps,eps),var)
+  X  = rbind(X1,X2) #matrices des données
+  Y = c(rep(1,n1),rep(2,n1)) #vecteurs des étiquettes 
+  
+  return (list(X = X, Y = Y))
+  
+}
+```
+
+1)  ERREUR EMPIRIQUE
+
+```{r}
+err_empirique <- function (eps,n_obs,n_sim){
+  erreur = numeric(n_sim)
+  for (i in 1:n_sim){
+    De <- simul(eps,n_obs) #Jeu d'entrainement pour le modèle.
+    Dt <- simul(eps,n_obs) #Jeu de test pour le modèle.
+  
+    cb <-lda(De$X,De$Y) #cb pour classifieur de bayes, dans le cas de 2 lois gaussiennes de même matrice lda et le classfieur de bayes coincident.
+    res_cb <- predict(cb,Dt$X)$class #les classes de chaqu'une des observations estimer par le classifieur.
+  
+    erreur[i] <- mean(res_cb != Dt$Y) 
+  }
+  return (mean(erreur))
+}
+
+#Test
+print(err_empirique(0.1,200,2025))
+print(err_empirique(1,200,2025))
+print(err_empirique(2,200,2025))
+print(err_empirique(10,200,2025))
+# On remarque que plus $epsilon$ augmente plus (de façon extremement plus rapide l'erreur chute), resultat logique etant donné que plus les classes sont écartées, plus le classifieur arrivera a séparer les classes
+```
+
+2)  ERREUR THEORIQUE
+
+**a) un classifieur de bayes est de la forme :**
+
+$\hat f =~~~~1~~~P(X|Y=1)*P(Y=1) > P(X|Y=0)*P(Y=0)~~~~ \\~~~~~~~~~~~~2~~sinon$
+
+on pose
+
+$\pi_1 = P(Y = 1) \\ \pi_2 = P(Y=2)$
+
+La densité d'une loi gaussienne multivariée est :
+
+$$
+\log(P(X|Y=1)) = -(1/2)\log(2\pi|\Sigma|) - (1/2)(x-\mu_1)^T\Sigma^{-1}(x-\mu_1) \\idem ~pour~Y=2
+$$
+
+En soustrayant les deux équations :
+
+$$
+log(P(X|Y=1)) - log(P(X|Y=2)) = -(1/2)(x-\mu_1)^T\Sigma^{-1}(x-\mu_1) + (1/2)(x-\mu_2)^T\Sigma^{-1}(x-\mu_2) \\$$ $$<=> \log(P(X|Y=1)) - \log(P(X|Y=2)) = \frac{1}{2}\left[(x-\mu_2)^T\Sigma^{-1}(x-\mu_2) - (x-\mu_1)^T\Sigma^{-1}(x-\mu_1)\right] \\$$ $$on~a;~
+(x-\mu_i)^T\Sigma^{-1}(x-\mu_i) = x^T\Sigma^{-1}x - 2x^T\Sigma^{-1}\mu_i + \mu_i^T\Sigma^{-1}\mu_i$$ $$=>
+log(P(X|Y=1)) - log(P(X|Y=2)) = (1/2)(x^T\Sigma^{-1}x - 2x^T\Sigma^{-1}\mu_2 + \mu_2^T\Sigma^{-1}\mu_ - x^T\Sigma^{-1}x + 2x^T\Sigma^{-1}\mu_1 - \mu_1^T\Sigma^{-1}\mu_1) \\  $$ $$et~donc;~
+\log(P(X|Y=1)) - \log(P(X|Y=2)) = (1/2)(2x^T\Sigma^{-1}(\mu_1 - \mu_2) + \mu_2^T\Sigma^{-1}\mu_2 - \mu_1^T\Sigma^{-1}\mu_1)\\$$ $$<=>log(P(X|Y=1)) - log(P(X|Y=2)) = x^T\Sigma^{-1}(\mu_1 - \mu_2) + (1/2)(\mu_2^T\Sigma^{-1}\mu_2 - \mu_1^T\Sigma^{-1}\mu_1) \\$$ $$ (Par~symétrie~de~\Sigma)=>
+log(P(X|Y=1)) - log(P(X|Y=2)) = (\mu_1 - \mu_2)^T\Sigma^{-1}x -(1/2)(\mu_1^T\Sigma^{-1}\mu_1 - \mu_2^T\Sigma^{-1}\mu_2)
+$$
+
+On peut factoriser le second terme :
+
+$$
+\mu_1^T\Sigma^{-1}\mu_1 - \mu_2^T\Sigma^{-1}\mu_2 = (\mu_1 - \mu_2)^T\Sigma^{-1}(\mu_1 + \mu_2)
+$$
+
+et finalement on a
+
+$$
+log(P(X|Y=1)) - log(P(X|Y=2)) = (\mu_1 - \mu_2)^T\Sigma^{-1}(x - (1/2)(\mu_1 + \mu_2))
+$$
+
+**b) Si X appartient à la classe 1**
+
+Si $X \sim N(\mu_1, \Sigma)$, alors:
+
+$A = (\mu_1 - \mu_2)^T \Sigma^{-1}(X - (1/2)(\mu_1 + \mu_2))$
+
+on sait que A suit une loi normale car elle est une transformation affine d'une gaussienne, il nous reste donc à calculer son espérance et sa variance.
+
+$Sachant~\Sigma = I$
+
+$$E[A] = (\mu_1 - \mu_2)^T(\mu_1 - (1/2)(\mu_1 + \mu_2)) = (1/2)||\mu_1 - \mu_2||^2 = \epsilon^2$$
+
+$$Var(A) = (\mu_1 - \mu_2)^T \Sigma (\mu_1 - \mu_2) = ||\mu_1 - \mu_2||^2 = 2\epsilon^2$$
+
+Donc: $A \sim  N(\epsilon^2, 2\epsilon^2)$
+
+c)  ERREUR THEORIQUE
+
+```{r}
+erreur_th <- function(eps) {
+  if (eps == 0) {
+    return (0.5)
+  }
+  moy = eps^2
+  var = 2*eps^2
+  erreur_classe1 <- pnorm(0,mean = moy,sd = sqrt(var))
+  erreur_classe2 <- erreur_classe1
+  return ((0.5)*erreur_classe1 + 0.5*erreur_classe2)
+  
+}
+
+#test
+erreur_th(1)
+```
+
+**Vos données**
+
+```{r}
+data(PimaIndiansDiabetes)
+df = PimaIndiansDiabetes
+head(df)
+summary(df)
+str(df)
+dim(df)  #768x9
+```
+
+Présentation du jeu de données :
+
+On a 768 observations de femmes d'origine indienne Pima
+
+on 1 variable expliquée : le diabète
+
+Il y a 8 variables explicatives :
+
+-nombre de fois enceintes
+
+-le glucose
+
+-La pression artérielle
+
+-tricpeps (indicateur de masse grasse sous-cutanée)
+
+-l'insuline
+
+-mass ( IMC indice de masse corporelle)
+
+-pedigree
+
+-âge
+
+```{r}
+
+#Histogramme méthode univariées} 
+for (col in names(df)[1:8]) {   print(ggplot(df, aes(x = .data[[col]])) +            geom_histogram(bins = 30, fill = "steelblue") +
+ggtitle(paste("Histogramme de", col))) }
+```
+
+```{r}
+for (col in names(df)[1:8]) {
+  print(ggplot(df, aes(x = diabetes, y = .data[[col]], fill = diabetes)) + 
+          geom_boxplot() + 
+          ggtitle(paste(col, "vs diabetes")))
+}
+```
+
+```{r}
+df_sample <- df[sample(nrow(df), 200), ]
+ggpairs(df_sample[, c("glucose", "age", "mass", "diabetes")], 
+        aes(color=diabetes, alpha=0.6),
+        upper = list(continuous = wrap("cor", size=3)))
+```
+
+**Exploration non supervisée :**
+
+```{r}
+#transformation de nos variables
+
+dfV2 =df
+
+#on souhaite gerer les valeurs abérantes 
+
+#cas des 0 abérants
+#ces 5 variables ne devraient pas pouvoir valoir 0 
+zeroA <- c("glucose","pressure","triceps","insulin","mass") 
+
+#remplacement des 0 
+for (i in zeroA){
+  dfV2[dfV2[[i]] == 0, i] <- NA
+}
+
+#mtn on peux calculer la medianne et la moyenne 
+#on vas remplacer chaque 0 par la medianne pour completer 
+for (i in zeroA){
+  medianne <- median(dfV2[[i]],na.rm =TRUE) #on retire les NA
+  dfV2[is.na(dfV2[[i]]),i] <- medianne
+}
+library(dplyr)
+X <- dfV2[, names(dfV2) != "diabetes"]
+Y <- dfV2$diabetes
+
+#ACP
+#standardisation 
+Xstand <- scale(X)
+
+acp = prcomp(Xstand,center = FALSE, scale. = FALSE)
+
+inertie_pourcentage <- acp$sdev^2 / sum(acp$sdev^2)
+inertie_pourcentage_cumuler <- cumsum(inertie_pourcentage)
+
+# Projection des individus
+individus <- data.frame(
+  PC1 = acp$x[,1],
+  PC2 = acp$x[,2],
+  diabetes = Y
+)
+
+ggplot(individus, aes(x = PC1, y = PC2, color = diabetes)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Projection des individus sur PC1 et PC2",
+       x = paste0("PC1 (", round(inertie_pourcentage[1]*100, 1), "%)"),
+       y = paste0("PC2 (", round(inertie_pourcentage[2]*100, 1), "%)")) +
+  theme_minimal() +
+  scale_color_manual(values = c("neg" = "blue", "pos" = "red"))
+
+# Cercle des corrélations
+variables <- data.frame(
+  PC1 = acp$rotation[,1],
+  PC2 = acp$rotation[,2],
+  nom = rownames(acp$rotation)
+)
+
+ggplot(variables, aes(x = PC1, y = PC2)) +
+  geom_segment(aes(xend = 0, yend = 0), 
+               arrow = arrow(length = unit(0.3, "cm")), 
+               color = "darkred", linewidth = 0.8) +
+  geom_text(aes(label = nom), hjust = -0.1, vjust = -0.1, size = 4) +
+  xlim(-1, 1) + ylim(-1, 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
+  labs(title = "Cercle des corrélations",
+       x = paste0("PC1 (", round(inertie_pourcentage[1]*100, 1), "%)"),
+       y = paste0("PC2 (", round(inertie_pourcentage[2]*100, 1), "%)")) +
+  theme_minimal() +
+  coord_fixed()
+```
+
+```{r}
+#Kmeans
+
+#methode du coude pour savoir combien de cluster on aura besoin 
+#scic pour somme des carrés intra classe
+scic <- sapply(1:10, function(k) { 
+  kmeans(Xstand, centers = k, nstart = 20)$tot.withinss
+})
+#la méthode ne nous donne pas clairement un K optimal. J'ai donc décidé de tester le moment où il y a les décroissements les plus importants, en K = 2,3,5.
+#on remarquera que K=2 est le meilleur choix même s'il sépare assez mal les 2 classes
+
+
+data.frame(k = 1:10, WSS = scic) %>%
+  ggplot(aes(x = k, y = WSS)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "Méthode du coude pour K-means",
+       x = "Nombre de clusters",
+       y = "Within-cluster sum of squares")
+
+# K-means avec k=2
+kmeans_result <- kmeans(Xstand, centers = 2, nstart = 25)
+
+# Visualisation sur les composantes principales
+kmeans_df <- data.frame(
+  PC1 = acp$x[,1],
+  PC2 = acp$x[,2],
+  Cluster = factor(kmeans_result$cluster),
+  Diabetes = Y
+)
+
+ggplot(kmeans_df, aes(x = PC1, y = PC2, color = Cluster)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(title = "K-means clustering (k=2) vs classes réelles")
+
+
+# Confusion entre clusters et classes réelles
+table(Cluster = kmeans_result$cluster, Diabetes = Y)
+
+# K-means avec k=3
+kmeans_result <- kmeans(Xstand, centers = 3, nstart = 25)
+
+# Visualisation sur les composantes principales
+kmeans_df <- data.frame(
+  PC1 = acp$x[,1],
+  PC2 = acp$x[,2],
+  Cluster = factor(kmeans_result$cluster),
+  Diabetes = Y
+)
+
+ggplot(kmeans_df, aes(x = PC1, y = PC2, color = Cluster)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(title = "K-means clustering (k=3) vs classes réelles")
+
+# Confusion entre clusters et classes réelles
+table(Cluster = kmeans_result$cluster, Diabetes = Y)
+
+# K-means avec k=5
+kmeans_result <- kmeans(Xstand, centers = 5, nstart = 25)
+
+# Visualisation sur les composantes principales
+kmeans_df <- data.frame(
+  PC1 = acp$x[,1],
+  PC2 = acp$x[,2],
+  Cluster = factor(kmeans_result$cluster),
+  Diabetes = Y
+)
+
+ggplot(kmeans_df, aes(x = PC1, y = PC2, color = Cluster)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(title = "K-means clustering (k=5) vs classes réelles")
+
+# Confusion entre clusters et classes réelles
+table(Cluster = kmeans_result$cluster, Diabetes = Y)
+
+
+#on remarque que K=2 est  le meilleur choix au vue des resultats
+```
+
+conclusion :
+
+-le K-means K = 2 qui est pourtant le meilleur choix n'arrive pas a bien separer les 2 classes.
+
+\- Les classes ne sont pas parfaitement séparables dans l'espace des composantes principales, ce qui explique la difficulté de séparation.
+
+-L'ACP démontre que les deux premières composantes expliquent une petite partie de la variance totale.
+
+**Prédiction avec un classifieur de Bayes naif et une méthode de votre choix**
+
+```{r}
+# Division des données
+part <- createDataPartition(dfV2$diabetes, p = 0.75, list = FALSE)
+de <- dfV2[part, ]
+dt <- dfV2[-part, ]
+
+# Classifieur de Bayes Naïf
+bayesNaive <- naiveBayes(diabetes ~ ., data = de)
+
+bayesNaive_entr <- predict(bayesNaive, de)
+bayesNaive_test <- predict(bayesNaive, dt)
+
+cat("Entraînement")
+confusionMatrix(bayesNaive_entr, de$diabetes)
+
+cat("Test")
+nb_cm <- confusionMatrix(bayesNaive_test, dt$diabetes)
+print(nb_cm)
+
+# Erreur de prédiction
+erreur_entrainement <- mean(bayesNaive_entr != de$diabetes)
+erreur_test <- mean(bayesNaive_test != dt$diabetes)
+
+cat("Erreur d'entraînement", round(erreur_entrainement, 4), "\n")
+cat("Erreur de test", round(erreur_test, 4), "\n")
+```
+
+```{r}
+#Je choisis la méthode de la foret aléatoire
+#install.packages("randomForest")
+library(randomForest)
+
+# Random Forest
+set.seed(123)
+foretAleatoire <- randomForest(diabetes ~ ., data = de, 
+                               ntree = 500, mtry = 3, importance = TRUE)
+
+foretAleatoire_entr <- predict(foretAleatoire, de)
+foretAleatoire_test <- predict(foretAleatoire, dt)
+
+cat("Matrice de confusion - Test (Random Forest):\n")
+rf_cm <- confusionMatrix(foretAleatoire_test, dt$diabetes)
+print(rf_cm)
+
+# Erreur de prédiction
+erreur_entrainement_rf <- mean(foretAleatoire_entr != de$diabetes)
+erreur_test_rf <- mean(foretAleatoire_test != dt$diabetes)
+
+cat("Erreur d'entraînement", round(erreur_entrainement_rf, 4), "\n")
+cat("Erreur de test:", round(erreur_test_rf, 4), "\n")
+
+# Importance des variables
+importance_df <- data.frame(
+  Variable = rownames(foretAleatoire$importance),
+  Importance = foretAleatoire$importance[, "MeanDecreaseGini"]
+) %>% arrange(desc(Importance))
+
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Importance des variables (Random Forest)",
+       x = "Variable",
+       y = "impact des variables si la minimisation de l'impureté")
+
+
+```
